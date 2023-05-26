@@ -32,6 +32,8 @@ import (
 // The configuration config must be non-nil and must include
 // at least one certificate or else set GetCertificate.
 func Server(conn net.Conn, config *Config) *Conn {
+	config = config.Clone()
+	config.applyAlgorithmPolicy()
 	c := &Conn{
 		conn:   conn,
 		config: config,
@@ -45,6 +47,8 @@ func Server(conn net.Conn, config *Config) *Conn {
 // The config cannot be nil: users must set either ServerName or
 // InsecureSkipVerify in the config.
 func Client(conn net.Conn, config *Config) *Conn {
+	config = config.Clone()
+	config.applyAlgorithmPolicy()
 	c := &Conn{
 		conn:     conn,
 		config:   config,

@@ -138,12 +138,96 @@ type cipherSuite struct {
 	keyLen int
 	macLen int
 	ivLen  int
-	ka     func(version uint16) keyAgreement
+	ka     keyAgreementType
 	// flags is a bitmask of the suite* values, above.
 	flags  int
-	cipher func(key, iv []byte, isRead bool) any
-	mac    func(key []byte) hash.Hash
-	aead   func(key, fixedNonce []byte) aead
+	cipher any // cipherType or nil
+	mac    any // macType or nil
+	aead   any // aeadType or nil, exclusive to cipher and mac
+}
+
+type keyAgreementType int
+
+const (
+	rsaKA keyAgreementType = iota
+	ecdheRSAKA
+	ecdheECDSAKA
+)
+
+var kaToConstructor = map[keyAgreementType]func(version uint16) keyAgreement{
+	rsaKA:        newRSAKA,
+	ecdheRSAKA:   newECDHERSAKA,
+	ecdheECDSAKA: newECDHEECDSAKA,
+}
+
+func (c *cipherSuite) newKA(version uint16) keyAgreement {
+	constructor, ok := kaToConstructor[c.ka]
+	if !ok {
+		panic("tls: internal error: unknown keyAgreement")
+	}
+	return constructor(version)
+}
+
+type cipherType int
+
+const (
+	cipherAES cipherType = iota
+	cipher3DES
+	cipherRC4
+)
+
+var cipherToConstructor = map[cipherType]func(key, iv []byte, isRead bool) any{
+	cipherAES:  newCipherAES,
+	cipher3DES: newCipher3DES,
+	cipherRC4:  newCipherRC4,
+}
+
+func (c *cipherSuite) newCipher(key, iv []byte, isRead bool) any {
+	constructor, ok := cipherToConstructor[c.cipher.(cipherType)]
+	if !ok {
+		panic("tls: internal error: unknown cipher")
+	}
+	return constructor(key, iv, isRead)
+}
+
+type macType int
+
+const (
+	macSHA256 macType = iota
+	macSHA1
+)
+
+var macToConstructor = map[macType]func(key []byte) hash.Hash{
+	macSHA256: newMACSHA256,
+	macSHA1:   newMACSHA1,
+}
+
+func (c *cipherSuite) newMAC(key []byte) hash.Hash {
+	constructor, ok := macToConstructor[c.mac.(macType)]
+	if !ok {
+		panic("tls: internal error: unknown mac")
+	}
+	return constructor(key)
+}
+
+type aeadType int
+
+const (
+	aeadAESGCM aeadType = iota
+	aeadChaCha20Poly1305
+)
+
+var aeadToConstructor = map[aeadType]func(key, fixedNonce []byte) aead{
+	aeadAESGCM:           newAEADAESGCM,
+	aeadChaCha20Poly1305: newAEADChaCha20Poly1305,
+}
+
+func (c *cipherSuite) newAEAD(key, fixedNonce []byte) aead {
+	constructor, ok := aeadToConstructor[c.aead.(aeadType)]
+	if !ok {
+		panic("tls: internal error: unknown AEAD")
+	}
+	return constructor(key, fixedNonce)
 }
 
 var cipherSuites = []*cipherSuite{ // TODO: replace with a map, since the order doesn't matter.
@@ -194,14 +278,27 @@ func selectCipherSuite(ids, supportedIDs []uint16, ok func(*cipherSuite) bool) *
 type cipherSuiteTLS13 struct {
 	id     uint16
 	keyLen int
-	aead   func(key, fixedNonce []byte) aead
+	aead   aeadType
 	hash   crypto.Hash
 }
 
+var aeadToConstructorTLS13 = map[aeadType]func(key, fixedNonce []byte) aead{
+	aeadAESGCM:           newAEADAESGCMTLS13,
+	aeadChaCha20Poly1305: newAEADChaCha20Poly1305,
+}
+
+func (c *cipherSuiteTLS13) newAEAD(key, fixedNonce []byte) aead {
+	constructor, ok := aeadToConstructorTLS13[c.aead]
+	if !ok {
+		panic("tls: internal error: unknown AEAD")
+	}
+	return constructor(key, fixedNonce)
+}
+
 var cipherSuitesTLS13 = []*cipherSuiteTLS13{ // TODO: replace with a map.
-	{TLS_AES_128_GCM_SHA256, 16, aeadAESGCMTLS13, crypto.SHA256},
+	{TLS_AES_128_GCM_SHA256, 16, aeadAESGCM, crypto.SHA256},
 	{TLS_CHACHA20_POLY1305_SHA256, 32, aeadChaCha20Poly1305, crypto.SHA256},
-	{TLS_AES_256_GCM_SHA384, 32, aeadAESGCMTLS13, crypto.SHA384},
+	{TLS_AES_256_GCM_SHA384, 32, aeadAESGCM, crypto.SHA384},
 }
 
 // cipherSuitesPreferenceOrder is the order in which we'll select (on the
@@ -391,12 +488,12 @@ func aesgcmPreferred(ciphers []uint16) bool {
 	return false
 }
 
-func cipherRC4(key, iv []byte, isRead bool) any {
+func newCipherRC4(key, iv []byte, isRead bool) any {
 	cipher, _ := rc4.NewCipher(key)
 	return cipher
 }
 
-func cipher3DES(key, iv []byte, isRead bool) any {
+func newCipher3DES(key, iv []byte, isRead bool) any {
 	block, _ := des.NewTripleDESCipher(key)
 	if isRead {
 		return cipher.NewCBCDecrypter(block, iv)
@@ -404,7 +501,7 @@ func cipher3DES(key, iv []byte, isRead bool) any {
 	return cipher.NewCBCEncrypter(block, iv)
 }
 
-func cipherAES(key, iv []byte, isRead bool) any {
+func newCipherAES(key, iv []byte, isRead bool) any {
 	block, _ := aes.NewCipher(key)
 	if isRead {
 		return cipher.NewCBCDecrypter(block, iv)
@@ -412,8 +509,8 @@ func cipherAES(key, iv []byte, isRead bool) any {
 	return cipher.NewCBCEncrypter(block, iv)
 }
 
-// macSHA1 returns a SHA-1 based constant time MAC.
-func macSHA1(key []byte) hash.Hash {
+// newMACSHA1 returns a SHA-1 based constant time MAC.
+func newMACSHA1(key []byte) hash.Hash {
 	h := sha1.New
 	// The BoringCrypto SHA1 does not have a constant-time
 	// checksum function, so don't try to use it.
@@ -423,9 +520,9 @@ func macSHA1(key []byte) hash.Hash {
 	return hmac.New(h, key)
 }
 
-// macSHA256 returns a SHA-256 based MAC. This is only supported in TLS 1.2 and
+// newMACSHA256 returns a SHA-256 based MAC. This is only supported in TLS 1.2 and
 // is currently only used in disabled-by-default cipher suites.
-func macSHA256(key []byte) hash.Hash {
+func newMACSHA256(key []byte) hash.Hash {
 	return hmac.New(sha256.New, key)
 }
 
@@ -500,7 +597,7 @@ func (f *xorNonceAEAD) Open(out, nonce, ciphertext, additionalData []byte) ([]by
 	return result, err
 }
 
-func aeadAESGCM(key, noncePrefix []byte) aead {
+func newAEADAESGCM(key, noncePrefix []byte) aead {
 	if len(noncePrefix) != noncePrefixLength {
 		panic("tls: internal error: wrong nonce length")
 	}
@@ -524,7 +621,7 @@ func aeadAESGCM(key, noncePrefix []byte) aead {
 	return ret
 }
 
-func aeadAESGCMTLS13(key, nonceMask []byte) aead {
+func newAEADAESGCMTLS13(key, nonceMask []byte) aead {
 	if len(nonceMask) != aeadNonceLength {
 		panic("tls: internal error: wrong nonce length")
 	}
@@ -542,7 +639,7 @@ func aeadAESGCMTLS13(key, nonceMask []byte) aead {
 	return ret
 }
 
-func aeadChaCha20Poly1305(key, nonceMask []byte) aead {
+func newAEADChaCha20Poly1305(key, nonceMask []byte) aead {
 	if len(nonceMask) != aeadNonceLength {
 		panic("tls: internal error: wrong nonce length")
 	}
@@ -593,18 +690,18 @@ func tls10MAC(h hash.Hash, out, seq, header, data, extra []byte) []byte {
 	return res
 }
 
-func rsaKA(version uint16) keyAgreement {
+func newRSAKA(version uint16) keyAgreement {
 	return rsaKeyAgreement{}
 }
 
-func ecdheECDSAKA(version uint16) keyAgreement {
+func newECDHEECDSAKA(version uint16) keyAgreement {
 	return &ecdheKeyAgreement{
 		isRSA:   false,
 		version: version,
 	}
 }
 
-func ecdheRSAKA(version uint16) keyAgreement {
+func newECDHERSAKA(version uint16) keyAgreement {
 	return &ecdheKeyAgreement{
 		isRSA:   true,
 		version: version,

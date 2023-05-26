@@ -570,7 +570,7 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 		}
 	}
 
-	keyAgreement := hs.suite.ka(c.vers)
+	keyAgreement := hs.suite.newKA(c.vers)
 	skx, err := keyAgreement.generateServerKeyExchange(c.config, hs.cert, hs.clientHello, hs.hello)
 	if err != nil {
 		c.sendAlert(alertHandshakeFailure)
@@ -744,13 +744,13 @@ func (hs *serverHandshakeState) establishKeys() error {
 	var clientHash, serverHash hash.Hash
 
 	if hs.suite.aead == nil {
-		clientCipher = hs.suite.cipher(clientKey, clientIV, true /* for reading */)
-		clientHash = hs.suite.mac(clientMAC)
-		serverCipher = hs.suite.cipher(serverKey, serverIV, false /* not for reading */)
-		serverHash = hs.suite.mac(serverMAC)
+		clientCipher = hs.suite.newCipher(clientKey, clientIV, true /* for reading */)
+		clientHash = hs.suite.newMAC(clientMAC)
+		serverCipher = hs.suite.newCipher(serverKey, serverIV, false /* not for reading */)
+		serverHash = hs.suite.newMAC(serverMAC)
 	} else {
-		clientCipher = hs.suite.aead(clientKey, clientIV)
-		serverCipher = hs.suite.aead(serverKey, serverIV)
+		clientCipher = hs.suite.newAEAD(clientKey, clientIV)
+		serverCipher = hs.suite.newAEAD(serverKey, serverIV)
 	}
 
 	c.in.prepareCipherSpec(c.vers, clientCipher, clientHash)

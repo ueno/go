@@ -16,10 +16,13 @@ import (
 	"crypto/rsa"
 	"crypto/sha512"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1544,4 +1547,382 @@ func (e *CertificateVerificationError) Error() string {
 
 func (e *CertificateVerificationError) Unwrap() error {
 	return e.Err
+}
+
+// An algorithmPolicy defines a set of algorithms can be used in TLS,
+// populated from the onDiskConfig struct.
+type algorithmPolicy struct {
+	versions               []uint16
+	curves                 []CurveID
+	signatureAlgorithms    []SignatureScheme
+	keyAgreementAlgorithms []keyAgreementType
+	hashes                 []crypto.Hash
+	ciphers                []*cipherWithKeyLen
+	macs                   []macType
+	aeads                  []*aeadWithKeyLen
+}
+
+var configFilepath string = "/etc/crypto-policies/back-ends/golang.config"
+
+var nameToVersion = map[string]uint16{
+	"TLS1.3": VersionTLS13,
+	"TLS1.2": VersionTLS12,
+	"TLS1.1": VersionTLS11,
+	"TLS1.0": VersionTLS10,
+	"SSL3.0": VersionSSL30,
+}
+
+var nameToCurveID = map[string]CurveID{
+	"CurveP256": CurveP256,
+	"CurveP384": CurveP384,
+	"CurveP521": CurveP521,
+	"X25519":    X25519,
+}
+
+var nameToSignatureScheme = map[string]SignatureScheme{
+	"PKCS1WithSHA256":        PKCS1WithSHA256,
+	"PKCS1WithSHA384":        PKCS1WithSHA384,
+	"PKCS1WithSHA512":        PKCS1WithSHA512,
+	"PSSWithSHA256":          PSSWithSHA256,
+	"PSSWithSHA384":          PSSWithSHA384,
+	"PSSWithSHA512":          PSSWithSHA512,
+	"ECDSAWithP256AndSHA256": ECDSAWithP256AndSHA256,
+	"ECDSAWithP384AndSHA384": ECDSAWithP384AndSHA384,
+	"ECDSAWithP521AndSHA512": ECDSAWithP521AndSHA512,
+	"Ed25519":                Ed25519,
+	"PKCS1WithSHA1":          PKCS1WithSHA1,
+	"ECDSAWithSHA1":          ECDSAWithSHA1,
+}
+
+var nameToKeyAgreementAlgorithm = map[string]keyAgreementType{
+	"ECDHE-RSA":   ecdheRSAKA,
+	"ECDHE-ECDSA": ecdheECDSAKA,
+	"RSA":         rsaKA,
+}
+
+type cipherWithKeyLen struct {
+	keyLen int
+	cipher cipherType
+}
+
+var nameToCipher = map[string]*cipherWithKeyLen{
+	"AES-256-CBC": {32, cipherAES},
+	"AES-128-CBC": {16, cipherAES},
+	"3DES-CBC":    {24, cipher3DES},
+	"RC4-128":     {16, cipherRC4},
+}
+
+var nameToMAC = map[string]macType{
+	"HMAC-SHA1":   macSHA1,
+	"HMAC-SHA256": macSHA256,
+}
+
+type aeadWithKeyLen struct {
+	keyLen int
+	aead   aeadType
+}
+
+var nameToAEAD = map[string]*aeadWithKeyLen{
+	"AES-256-GCM":       {32, aeadAESGCM},
+	"AES-128-GCM":       {16, aeadAESGCM},
+	"CHACHA20-POLY1305": {32, aeadChaCha20Poly1305},
+}
+
+var nameToHash = map[string]crypto.Hash{
+	"SHA256": crypto.SHA256,
+	"SHA384": crypto.SHA384,
+}
+
+func (curve CurveID) isAllowed() bool {
+	for _, v := range policy.curves {
+		if curve == v {
+			return true
+		}
+	}
+	return false
+}
+
+// filterCurves removes any curves not allowed for the use with TLS.
+func filterCurves(curves []CurveID) []CurveID {
+	var result []CurveID
+	for _, v := range curves {
+		if v.isAllowed() {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+func (s SignatureScheme) isAllowed() bool {
+	for _, v := range policy.signatureAlgorithms {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
+// filterSignatureAlgorithms removes any signature algorithms not allowed for the use with TLS.
+func filterSignatureAlgorithms(sigAlgs []SignatureScheme) []SignatureScheme {
+	var result []SignatureScheme
+	for _, v := range sigAlgs {
+		if v.isAllowed() {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+func (cs *cipherSuite) matchesKeyAgreement(kas []keyAgreementType) bool {
+	for _, ka := range kas {
+		if cs.ka == ka {
+			return true
+		}
+	}
+	return false
+}
+
+func (cs *cipherSuite) matchesCipher(ciphers []*cipherWithKeyLen) bool {
+	for _, cipher := range ciphers {
+		if cs.cipher == cipher.cipher &&
+			cs.keyLen == cipher.keyLen {
+			return true
+		}
+	}
+	return false
+}
+
+func (cs *cipherSuite) matchesMAC(macs []macType) bool {
+	for _, mac := range macs {
+		if cs.mac == mac {
+			return true
+		}
+	}
+	return false
+}
+
+func (cs *cipherSuite) matchesAEAD(aeads []*aeadWithKeyLen) bool {
+	for _, aead := range aeads {
+		if cs.aead == aead.aead && cs.keyLen == aead.keyLen {
+			return true
+		}
+	}
+	return false
+}
+
+func (cs *cipherSuite) cipherSuiteIsAllowed() bool {
+	if !cs.matchesKeyAgreement(policy.keyAgreementAlgorithms) {
+		return false
+	}
+
+	if cs.cipher != nil {
+		return cs.matchesCipher(policy.ciphers) &&
+			cs.matchesMAC(policy.macs)
+	}
+
+	return cs.matchesAEAD(policy.aeads)
+}
+
+// filterCipherSuites removes any TLS 1.2 ciphersuites not allowed by the policy.
+func filterCipherSuites(cipherSuites []uint16) []uint16 {
+	var result []uint16
+	for _, id := range cipherSuites {
+		if cs := cipherSuiteByID(id); cs != nil && cs.cipherSuiteIsAllowed() {
+			result = append(result, id)
+		}
+	}
+	return result
+}
+
+func (cs *cipherSuiteTLS13) matchesAEAD(aeads []*aeadWithKeyLen) bool {
+	for _, aead := range aeads {
+		if cs.aead == aead.aead && cs.keyLen == aead.keyLen {
+			return true
+		}
+	}
+	return false
+}
+
+func (cs *cipherSuiteTLS13) matchesHash(hashes []crypto.Hash) bool {
+	for _, hash := range hashes {
+		if cs.hash == hash {
+			return true
+		}
+	}
+	return false
+}
+
+func (cs *cipherSuiteTLS13) cipherSuiteTLS13IsAllowed() bool {
+
+	return cs.matchesAEAD(policy.aeads) &&
+		cs.matchesHash(policy.hashes)
+}
+
+// filterCipherSuitesTLS13 removes any TLS 1.3 ciphersuites not allowed by the policy.
+func filterCipherSuitesTLS13(cipherSuites []uint16) []uint16 {
+	var result []uint16
+	for _, id := range cipherSuites {
+		if cs := cipherSuiteTLS13ByID(id); cs != nil && cs.cipherSuiteTLS13IsAllowed() {
+			result = append(result, id)
+		}
+	}
+
+	return result
+}
+
+// applyAlgorithmPolicy applies restriction from the policy to the given configuration.
+func (c *Config) applyAlgorithmPolicy() {
+	if !policyLoaded {
+		return
+	}
+
+	versions := make([]uint16, len(policy.versions))
+	copy(versions, policy.versions)
+
+	sort.Slice(versions, func(i, j int) bool {
+		return versions[i] < versions[j]
+	})
+
+	if len(versions) > 0 {
+		c.MinVersion = versions[0]
+		c.MaxVersion = versions[len(versions)-1]
+	}
+
+	if c.CipherSuites != nil {
+		c.CipherSuites = filterCipherSuites(c.CipherSuites)
+	}
+}
+
+var policy algorithmPolicy
+var policyLoaded bool
+
+type onDiskConfig struct {
+	SupportedVersions               []string `json:"supportedVersions"`
+	SupportedSignatureAlgorithms    []string `json:"supportedSignatureAlgorithms"`
+	SupportedCurves                 []string `json:"supportedCurves"`
+	SupportedKeyAgreementAlgorithms []string `json:"supportedKeyAgreementAlgorithms"`
+	SupportedHashes                 []string `json:"supportedHashes"`
+	SupportedCiphers                []string `json:"supportedCiphers"`
+	SupportedMACs                   []string `json:"supportedMACs"`
+}
+
+// loadAlgorithmPolicy populates algorithmPolicy from the on-disk configuration file pointed to `filepath`.
+func loadAlgorithmPolicy(filepath string) error {
+	f, err := os.Open(filepath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	configJSON, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+
+	var c onDiskConfig
+	if err := json.Unmarshal(configJSON, &c); err != nil {
+		return err
+	}
+
+	for _, n := range c.SupportedVersions {
+		v, ok := nameToVersion[n]
+		if ok {
+			policy.versions = append(policy.versions, v)
+		}
+	}
+
+	for _, n := range c.SupportedCurves {
+		v, ok := nameToCurveID[n]
+		if ok {
+			policy.curves = append(policy.curves, v)
+		}
+	}
+
+	for _, n := range c.SupportedSignatureAlgorithms {
+		v, ok := nameToSignatureScheme[n]
+		if ok {
+			policy.signatureAlgorithms = append(policy.signatureAlgorithms, v)
+		}
+	}
+
+	for _, n := range c.SupportedKeyAgreementAlgorithms {
+		v, ok := nameToKeyAgreementAlgorithm[n]
+		if ok {
+			policy.keyAgreementAlgorithms = append(policy.keyAgreementAlgorithms, v)
+		}
+	}
+
+	for _, n := range c.SupportedHashes {
+		v, ok := nameToHash[n]
+		if ok {
+			policy.hashes = append(policy.hashes, v)
+		}
+	}
+
+	for _, n := range c.SupportedCiphers {
+		v, ok := nameToCipher[n]
+		if ok {
+			policy.ciphers = append(policy.ciphers, v)
+		}
+	}
+
+	for _, n := range c.SupportedMACs {
+		v, ok := nameToMAC[n]
+		if ok {
+			policy.macs = append(policy.macs, v)
+		}
+	}
+
+	for _, n := range c.SupportedCiphers {
+		v, ok := nameToAEAD[n]
+		if ok {
+			policy.aeads = append(policy.aeads, v)
+		}
+	}
+
+	policyLoaded = true
+
+	return nil
+}
+
+// applyAlgorithmPolicyToDefault applies the policy to library defaults.
+func applyAlgorithmPolicyToDefault() {
+	defaultCurvePreferences =
+		filterCurves(defaultCurvePreferences)
+
+	defaultSupportedSignatureAlgorithms =
+		filterSignatureAlgorithms(defaultSupportedSignatureAlgorithms)
+
+	defaultCipherSuites =
+		filterCipherSuites(defaultCipherSuites)
+	defaultCipherSuitesLen = len(defaultCipherSuites)
+
+	defaultCipherSuitesTLS13 =
+		filterCipherSuitesTLS13(defaultCipherSuitesTLS13)
+	defaultCipherSuitesTLS13NoAES =
+		filterCipherSuitesTLS13(defaultCipherSuitesTLS13NoAES)
+
+	if defaultFIPSCurvePreferences != nil {
+		defaultFIPSCurvePreferences =
+			filterCurves(defaultFIPSCurvePreferences)
+	}
+	if fipsSupportedSignatureAlgorithms != nil {
+		fipsSupportedSignatureAlgorithms =
+			filterSignatureAlgorithms(fipsSupportedSignatureAlgorithms)
+	}
+	if defaultCipherSuitesFIPS != nil {
+		defaultCipherSuitesFIPS =
+			filterCipherSuites(defaultCipherSuitesFIPS)
+	}
+}
+
+func init() {
+	filepath := os.Getenv("GOTLSCONFIG")
+	if filepath == "" {
+		filepath = configFilepath
+	}
+
+	if err := loadAlgorithmPolicy(filepath); err == nil {
+		applyAlgorithmPolicyToDefault()
+	}
 }

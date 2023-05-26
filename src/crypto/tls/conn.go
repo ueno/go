@@ -228,7 +228,7 @@ func (hc *halfConn) setTrafficSecret(suite *cipherSuiteTLS13, level QUICEncrypti
 	hc.trafficSecret = secret
 	hc.level = level
 	key, iv := suite.trafficKey(secret)
-	hc.cipher = suite.aead(key, iv)
+	hc.cipher = suite.newAEAD(key, iv)
 	for i := range hc.seq {
 		hc.seq[i] = 0
 	}
