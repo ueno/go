@@ -19,6 +19,7 @@ import (
 var enabled bool
 
 func init() {
+	strictFIPSOpenSSLRuntimeCheck()
 	enabled = openssl.FIPS()
 }
 

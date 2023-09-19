@@ -17,6 +17,10 @@ import (
 	"io"
 )
 
+func init() {
+       strictFIPSNonCompliantBinaryCheck()
+}
+
 var enabled = false
 
 // Unreachable marks code that should be unreachable
@@ -43,13 +47,13 @@ func (randReader) Read(b []byte) (int, error) { panic("boringcrypto: not availab
 
 const RandReader = randReader(0)
 
-func Enabled() bool   { return false }
-func NewSHA1() hash.Hash   { panic("boringcrypto: not available") }
-func NewSHA224() hash.Hash { panic("boringcrypto: not available") }
-func NewSHA256() hash.Hash { panic("boringcrypto: not available") }
-func NewSHA384() hash.Hash { panic("boringcrypto: not available") }
-func NewSHA512() hash.Hash { panic("boringcrypto: not available") }
-func SHA1(_ []byte) [20]byte { panic("boringcrypto: not available") }
+func Enabled() bool            { return false }
+func NewSHA1() hash.Hash       { panic("boringcrypto: not available") }
+func NewSHA224() hash.Hash     { panic("boringcrypto: not available") }
+func NewSHA256() hash.Hash     { panic("boringcrypto: not available") }
+func NewSHA384() hash.Hash     { panic("boringcrypto: not available") }
+func NewSHA512() hash.Hash     { panic("boringcrypto: not available") }
+func SHA1(_ []byte) [20]byte   { panic("boringcrypto: not available") }
 func SHA224(_ []byte) [28]byte { panic("boringcrypto: not available") }
 func SHA256(_ []byte) [32]byte { panic("boringcrypto: not available") }
 func SHA384(_ []byte) [48]byte { panic("boringcrypto: not available") }
@@ -86,7 +90,8 @@ func VerifyECDSA(pub *PublicKeyECDSA, hash, sig []byte) bool {
 
 type PublicKeyECDH struct{ _ int }
 type PrivateKeyECDH struct{ _ int }
-func (pc *PublicKeyECDH) Bytes() []byte { panic("boringcrypto: not available") }
+
+func (pc *PublicKeyECDH) Bytes() []byte                       { panic("boringcrypto: not available") }
 func (pc *PrivateKeyECDH) PublicKey() (*PublicKeyECDH, error) { panic("boringcrypto: not available") }
 
 func GenerateKeyECDH(curve string) (*PrivateKeyECDH, []byte, error) {
