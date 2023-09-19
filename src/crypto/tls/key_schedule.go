@@ -7,7 +7,7 @@ package tls
 import (
 	"crypto/ecdh"
 	"crypto/hmac"
-	"crypto/internal/boring"
+	boring "crypto/internal/backend"
 	"errors"
 	"fmt"
 	"hash"
@@ -60,7 +60,7 @@ func (c *cipherSuiteTLS13) expandLabel(secret []byte, label string, context []by
 		panic(fmt.Errorf("failed to construct HKDF label: %s", err))
 	}
 	out := make([]byte, length)
-	if boring.Enabled {
+	if boring.Enabled() {
 		reader, err := boring.ExpandHKDF(c.hash.New, secret, hkdfLabelBytes)
 		if err != nil {
 			panic("tls: HKDF-Expand-Label invocation failed unexpectedly")
@@ -91,7 +91,7 @@ func (c *cipherSuiteTLS13) extract(newSecret, currentSecret []byte) []byte {
 	if newSecret == nil {
 		newSecret = make([]byte, c.hash.Size())
 	}
-	if boring.Enabled {
+	if boring.Enabled() {
 		ikm, err := boring.ExtractHKDF(c.hash.New, newSecret, currentSecret)
 		if err != nil {
 			panic("tls: HKDF-Extract invocation failed unexpectedly")

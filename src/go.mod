@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/golang-fips/openssl/v2 v2.0.0-rc.2.0.20230807174113-66d32c6ed196 // indirect
 	golang.org/x/sys v0.10.0 // indirect
 	golang.org/x/text v0.11.0 // indirect
 )

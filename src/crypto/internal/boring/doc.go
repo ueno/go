@@ -7,13 +7,10 @@
 // If BoringCrypto is not available, the functions in this package all panic.
 package boring
 
-// Enabled reports whether BoringCrypto is available.
-// When enabled is false, all functions in this package panic.
-//
-// BoringCrypto is only available on linux/amd64 systems.
-const Enabled = available
+import "github.com/golang-fips/openssl/v2"
 
 // A BigInt is the raw words from a BigInt.
 // This definition allows us to avoid importing math/big.
 // Conversion between BigInt and *big.Int is in crypto/internal/boring/bbig.
-type BigInt []uint
+type BigInt = openssl.BigInt
+
