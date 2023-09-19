@@ -3,6 +3,8 @@
 
 package backend
 
+var isStrictFIPS bool = false
+
 func strictFIPSOpenSSLRuntimeCheck() {
 }
 

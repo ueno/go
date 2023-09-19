@@ -71,6 +71,10 @@ func init() {
 	sig.BoringCrypto()
 }
 
+func IsStrictFIPSMode() bool {
+	return isStrictFIPS
+}
+
 func Enabled() bool {
 	return enabled
 }

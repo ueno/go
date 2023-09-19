@@ -10,15 +10,15 @@ package backend
 import (
 	"crypto"
 	"crypto/cipher"
-	"crypto/internal/boring/sig"
-	"math/big"
 	bbig "crypto/internal/boring"
+	"crypto/internal/boring/sig"
 	"hash"
 	"io"
+	"math/big"
 )
 
 func init() {
-       strictFIPSNonCompliantBinaryCheck()
+	strictFIPSNonCompliantBinaryCheck()
 }
 
 var enabled = false
@@ -30,6 +30,10 @@ func Unreachable() {
 	// is exactly the code we want to detect for reporting
 	// standard Go crypto.
 	sig.StandardCrypto()
+}
+
+func IsStrictFIPSMode() bool {
+	return false
 }
 
 // UnreachableExceptTests marks code that should be unreachable

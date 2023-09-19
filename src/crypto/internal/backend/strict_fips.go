@@ -8,6 +8,8 @@ import (
 	"os"
 )
 
+var isStrictFIPS bool = true
+
 func strictFIPSOpenSSLRuntimeCheck() {
 	if hostFIPSModeEnabled() && !Enabled() {
 		fmt.Fprintln(os.Stderr, "FIPS mode is enabled, but the required OpenSSL backend is unavailable")
