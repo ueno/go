@@ -3001,7 +3001,7 @@ func TestUnknownExtKey(t *testing.T) {
 		DNSNames:     []string{"foo"},
 		ExtKeyUsage:  []ExtKeyUsage{ExtKeyUsage(-1)},
 	}
-	signer, err := rsa.GenerateKey(rand.Reader, 1024)
+	signer, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Errorf("failed to generate key for TestUnknownExtKey")
 	}
@@ -3164,7 +3164,7 @@ func TestCreateCertificateBrokenSigner(t *testing.T) {
 		SerialNumber: big.NewInt(10),
 		DNSNames:     []string{"example.com"},
 	}
-	k, err := rsa.GenerateKey(rand.Reader, 1024)
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("failed to generate test key: %s", err)
 	}

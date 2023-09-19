@@ -301,7 +301,7 @@ func fromHex(hexStr string) []byte {
 }
 
 func TestInvalidPSSSaltLength(t *testing.T) {
-	key, err := GenerateKey(rand.Reader, 245)
+	key, err := GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}

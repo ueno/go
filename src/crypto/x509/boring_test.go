@@ -27,6 +27,14 @@ const (
 	boringCertFIPSOK = 0x80
 )
 
+func notBoringRSAKey(t *testing.T, size int) *rsa.PrivateKey {
+	k, err := rsa.GenerateKeyNotBoring(rand.Reader, size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
 func boringRSAKey(t *testing.T, size int) *rsa.PrivateKey {
 	k, err := rsa.GenerateKey(rand.Reader, size)
 	if err != nil {
@@ -55,7 +63,7 @@ type boringCertificate struct {
 
 func TestBoringAllowCert(t *testing.T) {
 	R1 := testBoringCert(t, "R1", boringRSAKey(t, 2048), nil, boringCertCA|boringCertFIPSOK)
-	R2 := testBoringCert(t, "R2", boringRSAKey(t, 512), nil, boringCertCA)
+	R2 := testBoringCert(t, "R2", notBoringRSAKey(t, 512), nil, boringCertCA)
 	R3 := testBoringCert(t, "R3", boringRSAKey(t, 4096), nil, boringCertCA|boringCertFIPSOK)
 
 	M1_R1 := testBoringCert(t, "M1_R1", boringECDSAKey(t, elliptic.P256()), R1, boringCertCA|boringCertFIPSOK)
@@ -78,7 +86,7 @@ func TestBoringAllowCert(t *testing.T) {
 	testBoringCert(t, "I_R3", I_R3.key, R3, boringCertCA|boringCertFIPSOK)
 
 	testBoringCert(t, "L1_I", boringECDSAKey(t, elliptic.P384()), I_R1, boringCertLeaf|boringCertFIPSOK)
-	testBoringCert(t, "L2_I", boringRSAKey(t, 1024), I_R1, boringCertLeaf)
+	testBoringCert(t, "L2_I", notBoringRSAKey(t, 1024), I_R1, boringCertLeaf)
 }
 
 func testBoringCert(t *testing.T, name string, key interface{}, parent *boringCertificate, mode int) *boringCertificate {

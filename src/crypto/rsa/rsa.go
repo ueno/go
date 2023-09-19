@@ -272,6 +272,7 @@ func GenerateKey(random io.Reader, bits int) (*PrivateKey, error) {
 	return GenerateMultiPrimeKey(random, 2, bits)
 }
 
+
 // GenerateMultiPrimeKey generates a multi-prime RSA keypair of the given bit
 // size and the given random source.
 //
@@ -292,6 +293,24 @@ func GenerateKey(random io.Reader, bits int) (*PrivateKey, error) {
 //
 // [On the Security of Multi-prime RSA]: http://www.cacr.math.uwaterloo.ca/techreports/2006/cacr2006-16.pdf
 func GenerateMultiPrimeKey(random io.Reader, nprimes int, bits int) (*PrivateKey, error) {
+	if boring.Enabled() && boring.IsStrictFIPSMode() && !(random == boring.RandReader && nprimes == 2 &&
+		(bits == 2048 || bits == 3072 || bits == 4096)) {
+		return nil, errors.New("crypto/rsa: invalid primes or bits for boring")
+	}
+	return generateMultiPrimeKeyInternal(random, nprimes, bits)
+}
+
+func GenerateKeyNotBoring(random io.Reader, bits int) (*PrivateKey, error) {
+	boring.UnreachableExceptTests()
+	return generateMultiPrimeKeyInternal(random, 2, bits)
+}
+
+func GenerateMultiPrimeKeyNotBoring(random io.Reader, nprimes int, bits int) (*PrivateKey, error) {
+	boring.UnreachableExceptTests()
+	return generateMultiPrimeKeyInternal(random, nprimes, bits)
+}
+
+func generateMultiPrimeKeyInternal(random io.Reader, nprimes int, bits int) (*PrivateKey, error) {
 	randutil.MaybeReadByte(random)
 
 	if boring.Enabled() && random == boring.RandReader && nprimes == 2 &&
@@ -345,6 +364,7 @@ func GenerateMultiPrimeKey(random io.Reader, nprimes int, bits int) (*PrivateKey
 		}
 		return key, nil
 	}
+
 
 	priv := new(PrivateKey)
 	priv.E = 65537

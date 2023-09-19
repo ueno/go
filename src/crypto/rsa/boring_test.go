@@ -22,7 +22,7 @@ import (
 )
 
 func TestBoringASN1Marshal(t *testing.T) {
-	k, err := GenerateKey(rand.Reader, 128)
+	k, err := GenerateKey(rand.Reader, 3072)
 	if err != nil {
 		t.Fatal(err)
 	}

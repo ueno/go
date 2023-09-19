@@ -329,7 +329,7 @@ func TestBoringCertAlgs(t *testing.T) {
 	// Set up some roots, intermediate CAs, and leaf certs with various algorithms.
 	// X_Y is X signed by Y.
 	R1 := boringCert(t, "R1", boringRSAKey(t, 2048), nil, boringCertCA|boringCertFIPSOK)
-	R2 := boringCert(t, "R2", boringRSAKey(t, 512), nil, boringCertCA)
+	R2 := boringCert(t, "R2", NotBoringRSAKey(t, 512), nil, boringCertCA)
 
 	M1_R1 := boringCert(t, "M1_R1", boringECDSAKey(t, elliptic.P256()), R1, boringCertCA|boringCertFIPSOK)
 
@@ -353,9 +353,9 @@ func TestBoringCertAlgs(t *testing.T) {
 	// Older versions of OpenSSL allow 1024 bit leaf certs
 	var L2_I *boringCertificate
 	if boringtest.Supports(t, "RSA1024LeafCert") {
-		L2_I = boringCert(t, "L2_I", boringRSAKey(t, 1024), I_R1, boringCertLeaf)
+		L2_I = boringCert(t, "L2_I", NotBoringRSAKey(t, 1024), I_R1, boringCertLeaf)
 	} else {
-		L2_I = boringCert(t, "L2_I", boringRSAKey(t, 1024), I_R1, boringCertLeaf|boringCertNotBoring)
+		L2_I = boringCert(t, "L2_I", NotBoringRSAKey(t, 1024), I_R1, boringCertLeaf|boringCertNotBoring)
 	}
 
 	// client verifying server cert
@@ -514,6 +514,15 @@ const (
 	boringCertFIPSOK = 0x80
 	boringCertNotBoring = 0x100
 )
+
+func NotBoringRSAKey(t *testing.T, size int) *rsa.PrivateKey {
+	k, err := rsa.GenerateKeyNotBoring(rand.Reader, size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
 
 func boringRSAKey(t *testing.T, size int) *rsa.PrivateKey {
 	k, err := rsa.GenerateKey(rand.Reader, size)
