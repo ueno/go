@@ -198,6 +198,15 @@ type Signer interface {
 	Sign(rand io.Reader, digest []byte, opts SignerOpts) (signature []byte, err error)
 }
 
+// MessageSigner is an interface that groups message hashing and
+// signing as a single-shot operation.
+type MessageSigner interface {
+	// SignMessage signs message with the private key in a similar
+	// manner to Signer.Sign, but takes an entire message instead
+	// of the digest over it.
+	SignMessage(rand, message io.Reader, opts SignerOpts) (signature []byte, err error)
+}
+
 // SignerOpts contains options for signing with a Signer.
 type SignerOpts interface {
 	// HashFunc returns an identifier for the hash function used to produce
