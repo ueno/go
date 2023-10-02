@@ -150,6 +150,26 @@ func (priv *PrivateKey) Sign(rand io.Reader, digest []byte, opts crypto.SignerOp
 	return SignASN1(rand, priv, digest)
 }
 
+func (priv *PrivateKey) SignMessage(rand, message io.Reader, opts crypto.SignerOpts) (signature []byte, err error) {
+	hash := opts.HashFunc()
+	if !hash.Available() {
+		return nil, errors.New("ecdsa: unavailable hash function")
+	}
+	h := hash.New()
+	block := make([]byte, h.BlockSize())
+	for {
+		n, err := message.Read(block)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+		h.Write(block[:n])
+	}
+	return SignASN1(rand, priv, h.Sum(nil))
+}
+
 // GenerateKey generates a new ECDSA private key for the specified curve.
 //
 // Most applications should use [crypto/rand.Reader] as rand. Note that the
