@@ -93,6 +93,14 @@ func signedMessage(sigHash crypto.Hash, context string, transcript hash.Hash) []
 	return h.Sum(nil)
 }
 
+func signedMessageReader(context string, transcript hash.Hash) io.Reader {
+	return io.MultiReader(
+		bytes.NewReader(signaturePadding),
+		bytes.NewReader([]byte(context)),
+		bytes.NewReader(transcript.Sum(nil)),
+	)
+}
+
 // typeAndHashFromSignatureScheme returns the corresponding signature type and
 // crypto.Hash for a given TLS SignatureScheme.
 func typeAndHashFromSignatureScheme(signatureAlgorithm SignatureScheme) (sigType uint8, hash crypto.Hash, err error) {
