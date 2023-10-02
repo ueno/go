@@ -116,6 +116,34 @@ func (priv PrivateKey) Sign(rand io.Reader, message []byte, opts crypto.SignerOp
 	}
 }
 
+func (priv PrivateKey) SignMessage(rand, message io.Reader, opts crypto.SignerOpts) (signature []byte, err error) {
+	hash := opts.HashFunc()
+	switch {
+	case hash == crypto.SHA512: // Ed25519ph
+		h := hash.New()
+		block := make([]byte, h.BlockSize())
+		for {
+			n, err := message.Read(block)
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return nil, errors.New("ed25519: internal error: unable to read block")
+			}
+			h.Write(block[:n])
+		}
+		return priv.Sign(rand, h.Sum(nil), opts)
+	case hash == crypto.Hash(0): // Ed25519ctx or Ed25519
+		signed, err := io.ReadAll(message)
+		if err != nil {
+			return nil, err
+		}
+		return priv.Sign(rand, signed, opts)
+	default:
+		return nil, errors.New("ed25519: expected opts.HashFunc() zero (unhashed message, for standard Ed25519) or SHA-512 (for Ed25519ph)")
+	}
+}
+
 // Options can be used with [PrivateKey.Sign] or [VerifyWithOptions]
 // to select Ed25519 variants.
 type Options struct {
