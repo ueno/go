@@ -380,3 +380,19 @@ func VerifyPSS(pub *PublicKey, hash crypto.Hash, digest []byte, sig []byte, opts
 
 	return emsaPSSVerify(digest, em, emBits, opts.saltLength(), hash.New())
 }
+
+func signMessagePSS(rand io.Reader, priv *PrivateKey, hash crypto.Hash, message io.Reader, opts *PSSOptions) ([]byte, error) {
+	h := hash.New()
+	block := make([]byte, h.BlockSize())
+	for {
+		n, err := message.Read(block)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+		h.Write(block[:n])
+	}
+	return SignPSS(rand, priv, hash, h.Sum(nil), opts)
+}

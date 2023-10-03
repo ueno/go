@@ -391,3 +391,19 @@ func pkcs1v15HashInfo(hash crypto.Hash, inLen int) (hashLen int, prefix []byte, 
 	}
 	return
 }
+
+func signMessagePKCS1v15(random io.Reader, priv *PrivateKey, hash crypto.Hash, message io.Reader) ([]byte, error) {
+	h := hash.New()
+	block := make([]byte, h.BlockSize())
+	for {
+		n, err := message.Read(block)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+		h.Write(block[:n])
+	}
+	return SignPKCS1v15(random, priv, hash, h.Sum(nil))
+}

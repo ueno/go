@@ -165,6 +165,14 @@ func (priv *PrivateKey) Sign(rand io.Reader, digest []byte, opts crypto.SignerOp
 	return SignPKCS1v15(rand, priv, opts.HashFunc(), digest)
 }
 
+func (priv *PrivateKey) SignMessage(rand, message io.Reader, opts crypto.SignerOpts) ([]byte, error) {
+	if pssOpts, ok := opts.(*PSSOptions); ok {
+		return signMessagePSS(rand, priv, pssOpts.Hash, message, pssOpts)
+	}
+
+	return signMessagePKCS1v15(rand, priv, opts.HashFunc(), message)
+}
+
 // Decrypt decrypts ciphertext with priv. If opts is nil or of type
 // *PKCS1v15DecryptOptions then PKCS #1 v1.5 decryption is performed. Otherwise
 // opts must have type *OAEPOptions and OAEP decryption is done.
