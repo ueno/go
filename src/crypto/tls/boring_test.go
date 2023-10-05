@@ -7,6 +7,7 @@
 package tls
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	boring "crypto/internal/backend"
@@ -216,7 +217,10 @@ func TestBoringServerSignatureAndHash(t *testing.T) {
 
 			testingOnlyForceClientHelloSignatureAlgorithms = []SignatureScheme{sigHash}
 
-			sigType, _, _ := typeAndHashFromSignatureScheme(sigHash)
+			sigType, hashFunc, _ := typeAndHashFromSignatureScheme(sigHash)
+			if hashFunc == crypto.SHA1 && !boringtest.Supports(t, "SHA1") {
+				t.Skip("unsupported in FIPS mode")
+			}
 			switch sigType {
 			case signaturePKCS1v15, signatureRSAPSS:
 				serverConfig.CipherSuites = []uint16{TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256}
@@ -329,7 +333,7 @@ func TestBoringCertAlgs(t *testing.T) {
 	// Set up some roots, intermediate CAs, and leaf certs with various algorithms.
 	// X_Y is X signed by Y.
 	R1 := boringCert(t, "R1", boringRSAKey(t, 2048), nil, boringCertCA|boringCertFIPSOK)
-	R2 := boringCert(t, "R2", NotBoringRSAKey(t, 512), nil, boringCertCA)
+	R2 := boringCert(t, "R2", NotBoringRSAKey(t, 2560), nil, boringCertCA)
 
 	M1_R1 := boringCert(t, "M1_R1", boringECDSAKey(t, elliptic.P256()), R1, boringCertCA|boringCertFIPSOK)
 
