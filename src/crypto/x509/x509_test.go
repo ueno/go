@@ -3637,6 +3637,9 @@ func TestParseUniqueID(t *testing.T) {
 }
 
 func TestDisableSHA1ForCertOnly(t *testing.T) {
+	if boring.Enabled() && !boringtest.Supports(t, "SHA1") {
+		t.Skip("unsupported in FIPS mode")
+	}
 	t.Setenv("GODEBUG", "")
 
 	tmpl := &Certificate{
